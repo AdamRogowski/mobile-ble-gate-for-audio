@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">blePhoneCentral</string>
+    <string name="text_device_list_description">Click on paired device to connect</string>
+    <string name="text_default_logs_value">Logs:</string>
+    <string name="button_clear_log">Clear</string>
+</resources>
