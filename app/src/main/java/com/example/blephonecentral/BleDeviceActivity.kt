@@ -12,8 +12,14 @@ import android.util.Log
 import android.view.View
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.room.Room
 import java.text.SimpleDateFormat
 import java.util.*
+import com.example.room.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlin.math.log
 
 const val EXTRA_BLE_DEVICE = "BLEDevice"
 private const val SERVICE_UUID = "25AE1441-05D3-4C5B-8281-93D4E07420CF"
@@ -27,6 +33,11 @@ class BleDeviceActivity : AppCompatActivity() {
         ConnectedDiscovering,
         ConnectedSubscribing,
         Connected
+    }
+
+    //DB
+    companion object {
+        lateinit var database: AppDatabase
     }
 
     private var lifecycleState = BLELifecycleState.Disconnected
@@ -46,10 +57,15 @@ class BleDeviceActivity : AppCompatActivity() {
     private var connectedGatt: BluetoothGatt? = null
     private var characteristicForIndicate: BluetoothGattCharacteristic? = null
 
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.ble_device_activity)
+
+        //DB
+        database = Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java, "sensor_readings_db"
+        ).build()
 
         device = intent.getParcelableExtra(EXTRA_BLE_DEVICE)
         val deviceName: String = device?.let {
@@ -67,17 +83,49 @@ class BleDeviceActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    //DB
+    private fun insertIntoDatabase(date: String, value: Int){
+        val reading = Reading(time = date, value = value)
+        CoroutineScope(Dispatchers.IO).launch {
+            database.readingDao().insert(reading)
+        }
+    }
+
+    //DB
+    private fun logDatabaseContent(){
+        CoroutineScope(Dispatchers.IO).launch {
+            val allReadings = database.readingDao().getAll()
+            var allReadingsText = "All sensor readings from the database:\n"
+            for (reading in allReadings){
+                allReadingsText += (reading.time + " " + reading.value.toString() + "\n")
+            }
+            appendLog(allReadingsText)
+        }
+    }
+
+    //DB
+    fun onTapLogDatabase(view: View) {
+        logDatabaseContent()
+    }
+
+    fun onTapTest(view: View){
+        insertIntoDatabase(getCurrentTime(), 2137)
+    }
+
+    private fun getCurrentTime(): String{
+        return SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+    }
+
     @SuppressLint("SetTextI18n")
     private fun appendLog(message: String) {
         Log.d("appendLog", message)
         runOnUiThread {
-            val strTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-            textViewLog.text = textViewLog.text.toString() + "\n$strTime $message"
+            textViewLog.text = textViewLog.text.toString() + "\n${getCurrentTime()} $message"
 
-            // scroll after delay, because textView has to be updated first
+            // wait for the textView to update
             Handler(Looper.getMainLooper()).postDelayed({
                 scrollViewLog.fullScroll(View.FOCUS_DOWN)
-            }, 16)
+            }, 20)
         }
     }
 
@@ -137,7 +185,7 @@ class BleDeviceActivity : AppCompatActivity() {
         bluetoothManager.adapter
     }
 
-    //region BLE events, when connected
+    //BLE events, when connected----------------------------------------------------------------------------------------
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             val deviceAddress = gatt.device.address
@@ -200,16 +248,23 @@ class BleDeviceActivity : AppCompatActivity() {
             }
         }
 
+        fun isNumericToX(toCheck: String): Boolean {
+            return toCheck.toIntOrNull() != null
+        }
+
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             if (characteristic.uuid == UUID.fromString(CHAR_FOR_INDICATE_UUID)) {
                 val strValue = characteristic.value.toString(Charsets.UTF_8)
                 appendLog("onCharacteristicChanged value=\"$strValue\"")
+
+                //DB
+                if(isNumericToX(strValue)) insertIntoDatabase(getCurrentTime(), strValue.toInt())
+
             } else {
                 appendLog("onCharacteristicChanged unknown uuid $characteristic.uuid")
             }
         }
 
     }
-    //endregion
-
+    //------------------------------------------------------------------------------------------------------------------
 }

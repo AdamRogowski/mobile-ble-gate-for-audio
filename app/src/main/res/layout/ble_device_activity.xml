@@ -59,4 +59,39 @@
         app:layout_constraintEnd_toEndOf="@+id/scrollViewLog"
         app:layout_constraintTop_toTopOf="@+id/scrollViewLog" />
 
+
+    <Button
+        android:id="@+id/buttonLogDatabase"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="4dp"
+        android:includeFontPadding="false"
+        android:minWidth="48dip"
+        android:minHeight="32dip"
+        android:onClick="onTapLogDatabase"
+        android:paddingLeft="8dp"
+        android:paddingTop="4dp"
+        android:paddingRight="8dp"
+        android:paddingBottom="4dp"
+        android:text="Log DB"
+        app:layout_constraintEnd_toEndOf="@+id/scrollViewLog"
+        app:layout_constraintTop_toBottomOf="@+id/buttonClearLog" />
+
+    <Button
+        android:id="@+id/buttonTest"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="4dp"
+        android:includeFontPadding="false"
+        android:minWidth="48dip"
+        android:minHeight="32dip"
+        android:onClick="onTapTest"
+        android:paddingLeft="8dp"
+        android:paddingTop="4dp"
+        android:paddingRight="8dp"
+        android:paddingBottom="4dp"
+        android:text="Test DB"
+        app:layout_constraintEnd_toEndOf="@+id/scrollViewLog"
+        app:layout_constraintTop_toBottomOf="@+id/buttonLogDatabase" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>
