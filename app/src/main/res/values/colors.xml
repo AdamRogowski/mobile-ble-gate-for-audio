@@ -4,4 +4,5 @@
     <color name="white">#FFFFFFFF</color>
     <color name="Silver">#C0C0C0</color>
     <color name="DimGray">#696969</color>
+    <color name="DarkRed">#8B0000</color>
 </resources>

@@ -92,6 +92,13 @@ class BleDeviceActivity : AppCompatActivity() {
     }
 
     //DB
+    private fun clearDatabase(){
+        CoroutineScope(Dispatchers.IO).launch {
+            database.readingDao().nukeTable()
+        }
+    }
+
+    //DB
     private fun logDatabaseContent(){
         CoroutineScope(Dispatchers.IO).launch {
             val allReadings = database.readingDao().getAll()
@@ -99,7 +106,8 @@ class BleDeviceActivity : AppCompatActivity() {
             for (reading in allReadings){
                 allReadingsText += (reading.time + " " + reading.value.toString() + "\n")
             }
-            appendLog(allReadingsText)
+            //remove last \n
+            appendLog(allReadingsText.dropLast(1))
         }
     }
 
@@ -108,8 +116,22 @@ class BleDeviceActivity : AppCompatActivity() {
         logDatabaseContent()
     }
 
-    fun onTapTest(view: View){
-        insertIntoDatabase(getCurrentTime(), 2137)
+    fun onTapClearDatabase(view: View){
+        appendLog("Database cleared")
+        clearDatabase()
+    }
+
+    //reading from watch follows pattern "hr:ddd"
+    fun matchesPattern(s: String): Boolean {
+        val pattern = Regex("hr:\\d{1,3}")
+        return pattern.matches(s)
+    }
+
+    //extract digits from pattenr
+    fun extractNumber(s: String): Int {
+        val pattern = Regex("hr:(\\d+)")
+        val match = pattern.find(s)
+        return match?.groupValues?.get(1)?.toInt() ?: -1
     }
 
     private fun getCurrentTime(): String{
@@ -248,18 +270,13 @@ class BleDeviceActivity : AppCompatActivity() {
             }
         }
 
-        fun isNumericToX(toCheck: String): Boolean {
-            return toCheck.toIntOrNull() != null
-        }
-
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             if (characteristic.uuid == UUID.fromString(CHAR_FOR_INDICATE_UUID)) {
                 val strValue = characteristic.value.toString(Charsets.UTF_8)
                 appendLog("onCharacteristicChanged value=\"$strValue\"")
 
                 //DB
-                if(isNumericToX(strValue)) insertIntoDatabase(getCurrentTime(), strValue.toInt())
-
+                if(matchesPattern(strValue)) insertIntoDatabase(getCurrentTime(), extractNumber(strValue))
             } else {
                 appendLog("onCharacteristicChanged unknown uuid $characteristic.uuid")
             }

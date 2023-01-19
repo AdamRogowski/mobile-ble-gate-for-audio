@@ -1,7 +1,6 @@
 package com.example.room
 
 import androidx.room.*
-import com.example.room.Reading
 
 @Dao
 interface ReadingDao {
@@ -19,4 +18,7 @@ interface ReadingDao {
 
     @Delete
     suspend fun delete(reading: Reading)
+
+    @Query("DELETE FROM reading")
+    suspend fun nukeTable()
 }

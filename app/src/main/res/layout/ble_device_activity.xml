@@ -73,7 +73,7 @@
         android:paddingTop="4dp"
         android:paddingRight="8dp"
         android:paddingBottom="4dp"
-        android:text="Log DB"
+        android:text="@string/button_log_db"
         app:layout_constraintEnd_toEndOf="@+id/scrollViewLog"
         app:layout_constraintTop_toBottomOf="@+id/buttonClearLog" />
 
@@ -85,12 +85,13 @@
         android:includeFontPadding="false"
         android:minWidth="48dip"
         android:minHeight="32dip"
-        android:onClick="onTapTest"
+        android:onClick="onTapClearDatabase"
         android:paddingLeft="8dp"
         android:paddingTop="4dp"
         android:paddingRight="8dp"
         android:paddingBottom="4dp"
-        android:text="Test DB"
+        android:text="@string/button_clear_db"
+        android:backgroundTint="@color/DarkRed"
         app:layout_constraintEnd_toEndOf="@+id/scrollViewLog"
         app:layout_constraintTop_toBottomOf="@+id/buttonLogDatabase" />
 
