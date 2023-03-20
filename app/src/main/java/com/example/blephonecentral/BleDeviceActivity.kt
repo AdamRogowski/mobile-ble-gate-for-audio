@@ -1,30 +1,35 @@
 package com.example.blephonecentral
 
+import android.R.attr.track
 import android.annotation.SuppressLint
 import android.bluetooth.*
 import android.content.Context
-import android.os.Build
-import androidx.appcompat.app.AppCompatActivity
+import android.media.*
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
-import android.widget.ScrollView
 import android.widget.TextView
-import androidx.room.Room
-import java.text.SimpleDateFormat
-import java.util.*
+import androidx.appcompat.app.AppCompatActivity
 import com.example.room.*
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlin.math.log
+import java.io.IOException
+import java.nio.ByteBuffer
+import java.util.*
+
 
 const val EXTRA_BLE_DEVICE = "BLEDevice"
 private const val SERVICE_UUID = "25AE1449-05D3-4C5B-8281-93D4E07420CF"
 private const val CHAR_FOR_INDICATE_UUID = "25AE1494-05D3-4C5B-8281-93D4E07420CF"
 private const val CCC_DESCRIPTOR_UUID = "00002930-0000-1000-8000-00805f9b34fb"
+
+private const val SAMPLING_RATE_IN_HZ = 6000
+
+private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
+
+private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+
+private const val BUFFER_SIZE_FACTOR = 1
 
 class BleDeviceActivity : AppCompatActivity() {
     enum class BLELifecycleState {
@@ -35,37 +40,50 @@ class BleDeviceActivity : AppCompatActivity() {
         Connected
     }
 
-    //DB
-    companion object {
-        lateinit var database: AppDatabase
-    }
-
     private var lifecycleState = BLELifecycleState.Disconnected
         set(value) {
             field = value
-            appendLog("status = $value")
+            logManager.appendLog("status = $value")
         }
 
     private val textViewDeviceName: TextView
         get() = findViewById(R.id.textViewDeviceName)
-    private val textViewLog: TextView
-        get() = findViewById(R.id.textViewLog)
-    private val scrollViewLog: ScrollView
-        get() = findViewById(R.id.scrollViewLog)
 
     private var device: BluetoothDevice? = null
     private var connectedGatt: BluetoothGatt? = null
     private var characteristicForIndicate: BluetoothGattCharacteristic? = null
 
+    private lateinit var logManager: LogManager
+
+    //-------------MIC RECEIVING------------------
+    /*
+
+
+    private var buffer = ByteBuffer.allocateDirect(BUFFER_SIZE)
+
+    private var track = AudioTrack(AudioManager.STREAM_MUSIC, SAMPLING_RATE_IN_HZ,
+        CHANNEL_CONFIG, AUDIO_FORMAT, BUFFER_SIZE, AudioTrack.MODE_STREAM)
+
+
+    */
+    //--------------------------------------------
+    private val minBufferSize = AudioRecord.getMinBufferSize(SAMPLING_RATE_IN_HZ,
+        CHANNEL_CONFIG, AUDIO_FORMAT) * BUFFER_SIZE_FACTOR
+
+    private var track = AudioTrack(AudioManager.STREAM_MUSIC, SAMPLING_RATE_IN_HZ,
+        AudioFormat.CHANNEL_CONFIGURATION_MONO, AUDIO_FORMAT,
+        minBufferSize, AudioTrack.MODE_STREAM)
+
+    private var playThread: Thread? = null
+
+
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.ble_device_activity)
 
-        //DB
-        database = Room.databaseBuilder(
-            applicationContext,
-            AppDatabase::class.java, "sensor_readings_db"
-        ).build()
+        logManager = LogManager(this)
 
         device = intent.getParcelableExtra(EXTRA_BLE_DEVICE)
         val deviceName: String = device?.let {
@@ -74,11 +92,8 @@ class BleDeviceActivity : AppCompatActivity() {
             "<null>"
         }
         textViewDeviceName.text = deviceName
-        connect()
-    }
-
-    private fun init(){
-
+        startPlaying()
+        //logManager.appendLog(minBufferSize.toString() + "\n")
     }
 
     override fun onDestroy() {
@@ -87,93 +102,60 @@ class BleDeviceActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    //DB
-    private fun insertIntoDatabase(date: String, value: Int){
-        val reading = Reading(time = date, value = value)
-        CoroutineScope(Dispatchers.IO).launch {
-            database.readingDao().insert(reading)
-        }
+
+
+    // Playback received audio
+    fun startPlaying() {
+        Log.d("AUDIO", "Assigning player")
+        track.play()
+        // Receive and play audio
+        playThread = Thread({ connect() }, "AudioTrack Thread")
+        playThread!!.start()
     }
 
-    //DB
-    private fun clearDatabase(){
-        CoroutineScope(Dispatchers.IO).launch {
-            database.readingDao().nukeTable()
-        }
-    }
-
-    //DB
-    private fun logDatabaseContent(){
-        CoroutineScope(Dispatchers.IO).launch {
-            val allReadings = database.readingDao().getAll()
-            var allReadingsText = "All sensor readings from the database:\n"
-            for (reading in allReadings){
-                allReadingsText += (reading.time + " " + reading.value.toString() + "\n")
+    /*
+    // Receive audio and write into audio track object for playback
+    fun receiveRecording() {
+        val i = 0
+        while (!isRecording) {
+            try {
+                if (inStream.available() === 0) {
+                    //Do nothing
+                } else {
+                    inStream.read(buffer)
+                    track.write(buffer, 0, BUFFER_SIZE)
+                }
+            } catch (e: IOException) {
+                Log.d("AUDIO", "Error when receiving recording")
             }
-            //remove last \n
-            appendLog(allReadingsText.dropLast(1))
         }
     }
 
-    //DB
-    fun onTapLogDatabase(view: View) {
-        logDatabaseContent()
+     */
+
+    // Stop playing and free up resources
+    fun stopPlaying() {
     }
 
-    fun onTapClearDatabase(view: View){
-        appendLog("Database cleared")
-        clearDatabase()
-    }
-
-    //reading from watch follows pattern "hr:ddd"
-    fun matchesPattern(s: String): Boolean {
-        val pattern = Regex("hr:\\d{1,3}")
-        return pattern.matches(s)
-    }
-
-    //extract digits from pattenr
-    fun extractNumber(s: String): Int {
-        val pattern = Regex("hr:(\\d+)")
-        val match = pattern.find(s)
-        return match?.groupValues?.get(1)?.toInt() ?: -1
-    }
-
-    private fun getCurrentTime(): String{
-        return SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-    }
-
-    @SuppressLint("SetTextI18n")
-    private fun appendLog(message: String) {
-        Log.d("appendLog", message)
-        runOnUiThread {
-            textViewLog.text = textViewLog.text.toString() + "\n${getCurrentTime()} $message"
-
-            // wait for the textView to update
-            Handler(Looper.getMainLooper()).postDelayed({
-                scrollViewLog.fullScroll(View.FOCUS_DOWN)
-            }, 20)
-        }
-    }
 
     @SuppressLint("SetTextI18n")
     fun onTapClearLog(view: View) {
-        textViewLog.text = "Logs:"
-        appendLog("log cleared")
+        logManager.clearLog()
     }
 
     private fun connect() {
         device?.let {
-            appendLog("Connecting to ${it.name}")
+            logManager.appendLog("Connecting to ${it.name}")
             lifecycleState = BLELifecycleState.Connecting
             it.connectGatt(this, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
         } ?: run {
-            appendLog("ERROR: BluetoothDevice is null, cannot connect")
+            logManager.appendLog("ERROR: BluetoothDevice is null, cannot connect")
         }
     }
 
     private fun bleRestartLifecycle() {
-        val timeoutSec = 6L
-        appendLog("Will try reconnect in $timeoutSec seconds")
+        val timeoutSec = 2L
+        logManager.appendLog("Will try reconnect in $timeoutSec seconds")
         Handler(Looper.getMainLooper()).postDelayed({
             connect()
         }, timeoutSec * 1000)
@@ -183,7 +165,7 @@ class BleDeviceActivity : AppCompatActivity() {
         val cccdUuid = UUID.fromString(CCC_DESCRIPTOR_UUID)
         characteristic.getDescriptor(cccdUuid)?.let { cccDescriptor ->
             if (!gatt.setCharacteristicNotification(characteristic, true)) {
-                appendLog("ERROR: setNotification(true) failed for ${characteristic.uuid}")
+                logManager.appendLog("ERROR: setNotification(true) failed for ${characteristic.uuid}")
                 return
             }
             cccDescriptor.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
@@ -198,7 +180,7 @@ class BleDeviceActivity : AppCompatActivity() {
         val cccdUuid = UUID.fromString(CCC_DESCRIPTOR_UUID)
         characteristic.getDescriptor(cccdUuid)?.let { cccDescriptor ->
             if (!gatt.setCharacteristicNotification(characteristic, false)) {
-                appendLog("ERROR: setNotification(false) failed for ${characteristic.uuid}")
+                logManager.appendLog("ERROR: setNotification(false) failed for ${characteristic.uuid}")
                 return
             }
             cccDescriptor.value = BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
@@ -218,7 +200,7 @@ class BleDeviceActivity : AppCompatActivity() {
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    appendLog("Connected to $deviceAddress")
+                    logManager.appendLog("Connected to $deviceAddress")
 
                     // recommended on UI thread https://punchthrough.com/android-ble-guide/
                     Handler(Looper.getMainLooper()).post {
@@ -226,7 +208,7 @@ class BleDeviceActivity : AppCompatActivity() {
                         gatt.discoverServices()
                     }
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                    appendLog("Disconnected from $deviceAddress")
+                    logManager.appendLog("Disconnected from $deviceAddress")
                     connectedGatt = null
                     gatt.close()
                     lifecycleState = BLELifecycleState.Disconnected
@@ -235,7 +217,7 @@ class BleDeviceActivity : AppCompatActivity() {
             } else {
                 // random error 133 - close() and try reconnect
 
-                appendLog("ERROR: onConnectionStateChange status=$status deviceAddress=$deviceAddress, disconnecting")
+                logManager.appendLog("ERROR: onConnectionStateChange status=$status deviceAddress=$deviceAddress, disconnecting")
 
                 connectedGatt = null
                 gatt.close()
@@ -244,20 +226,19 @@ class BleDeviceActivity : AppCompatActivity() {
             }
         }
 
-        //@Suppress("SpellCheckingInspection")
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-            appendLog("onServicesDiscovered services.count=${gatt.services.size} status=$status")
+            logManager.appendLog("onServicesDiscovered services.count=${gatt.services.size} status=$status")
 
             if (status == 129 /*GATT_INTERNAL_ERROR*/) {
                 // it should be a rare case, this article recommends to disconnect:
                 // https://medium.com/@martijn.van.welie/making-android-ble-work-part-2-47a3cdaade07
-                appendLog("ERROR: status=129 (GATT_INTERNAL_ERROR), disconnecting")
+                logManager.appendLog("ERROR: status=129 (GATT_INTERNAL_ERROR), disconnecting")
                 gatt.disconnect()
                 return
             }
 
             val service = gatt.getService(UUID.fromString(SERVICE_UUID)) ?: run {
-                appendLog("ERROR: Service not found $SERVICE_UUID, disconnecting")
+                logManager.appendLog("ERROR: Service not found $SERVICE_UUID, disconnecting")
                 gatt.disconnect()
                 return
             }
@@ -269,20 +250,22 @@ class BleDeviceActivity : AppCompatActivity() {
                 lifecycleState = BLELifecycleState.ConnectedSubscribing
                 subscribeToIndications(it, gatt)
             } ?: run {
-                appendLog("WARN: characteristic not found $CHAR_FOR_INDICATE_UUID")
+                logManager.appendLog("WARN: characteristic not found $CHAR_FOR_INDICATE_UUID")
                 lifecycleState = BLELifecycleState.Connected
             }
         }
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             if (characteristic.uuid == UUID.fromString(CHAR_FOR_INDICATE_UUID)) {
+                //buffer = characteristic.value
+                //logManager.appendLog("onCharacteristicChanged value=\"$strValue\"")
                 val strValue = characteristic.value.toString(Charsets.UTF_8)
-                appendLog("onCharacteristicChanged value=\"$strValue\"")
+                logManager.appendLog("onCharacteristicChanged value=\"$strValue\"")
 
-                //DB
-                if(matchesPattern(strValue)) insertIntoDatabase(getCurrentTime(), extractNumber(strValue))
+                track.write(characteristic.value, 0, minBufferSize)
+
             } else {
-                appendLog("onCharacteristicChanged unknown uuid $characteristic.uuid")
+                logManager.appendLog("onCharacteristicChanged unknown uuid $characteristic.uuid")
             }
         }
 

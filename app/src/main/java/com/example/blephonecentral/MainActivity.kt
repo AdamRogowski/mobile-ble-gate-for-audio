@@ -49,7 +49,7 @@ class MainActivity : AppCompatActivity() {
                 reloadDevices()
             }
         } else {
-            reloadDevices()
+            grantPermissionsAndReloadDevices()
         }
     }
 
