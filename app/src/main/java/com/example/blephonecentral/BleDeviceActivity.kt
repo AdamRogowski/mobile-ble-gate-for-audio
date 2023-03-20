@@ -22,9 +22,9 @@ import kotlinx.coroutines.launch
 import kotlin.math.log
 
 const val EXTRA_BLE_DEVICE = "BLEDevice"
-private const val SERVICE_UUID = "25AE1441-05D3-4C5B-8281-93D4E07420CF"
-private const val CHAR_FOR_INDICATE_UUID = "25AE1444-05D3-4C5B-8281-93D4E07420CF"
-private const val CCC_DESCRIPTOR_UUID = "00002902-0000-1000-8000-00805f9b34fb"
+private const val SERVICE_UUID = "25AE1449-05D3-4C5B-8281-93D4E07420CF"
+private const val CHAR_FOR_INDICATE_UUID = "25AE1494-05D3-4C5B-8281-93D4E07420CF"
+private const val CCC_DESCRIPTOR_UUID = "00002930-0000-1000-8000-00805f9b34fb"
 
 class BleDeviceActivity : AppCompatActivity() {
     enum class BLELifecycleState {
@@ -75,6 +75,10 @@ class BleDeviceActivity : AppCompatActivity() {
         }
         textViewDeviceName.text = deviceName
         connect()
+    }
+
+    private fun init(){
+
     }
 
     override fun onDestroy() {
