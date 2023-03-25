@@ -1,6 +1,5 @@
 package com.example.blephonecentral
 
-import android.R.attr.track
 import android.annotation.SuppressLint
 import android.bluetooth.*
 import android.content.Context
@@ -13,8 +12,10 @@ import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.example.room.*
-import java.io.IOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
 import java.util.*
 
 
@@ -30,6 +31,8 @@ private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
 private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
 
 private const val BUFFER_SIZE_FACTOR = 1
+
+private const val GATT_MAX_MTU_SIZE = 517
 
 class BleDeviceActivity : AppCompatActivity() {
     enum class BLELifecycleState {
@@ -108,6 +111,7 @@ class BleDeviceActivity : AppCompatActivity() {
     fun startPlaying() {
         Log.d("AUDIO", "Assigning player")
         track.play()
+        //logManager.appendLog(track.state.toString())
         // Receive and play audio
         playThread = Thread({ connect() }, "AudioTrack Thread")
         playThread!!.start()
@@ -135,6 +139,10 @@ class BleDeviceActivity : AppCompatActivity() {
 
     // Stop playing and free up resources
     fun stopPlaying() {
+    }
+
+    private fun requestMTU(gatt: BluetoothGatt){
+        gatt.requestMtu(GATT_MAX_MTU_SIZE)
     }
 
 
@@ -195,18 +203,36 @@ class BleDeviceActivity : AppCompatActivity() {
 
     //BLE events, when connected----------------------------------------------------------------------------------------
     private val gattCallback = object : BluetoothGattCallback() {
+        override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                // The MTU negotiation was successful
+                logManager.appendLog("MTU size changed to $mtu bytes")
+
+                // recommended on UI thread https://punchthrough.com/android-ble-guide/
+                Handler(Looper.getMainLooper()).post {
+                    lifecycleState = BLELifecycleState.ConnectedDiscovering
+
+                    gatt.discoverServices()
+                }
+            } else {
+                // The MTU negotiation failed
+                logManager.appendLog("MTU size negotiation failed with status $status")
+                connectedGatt = null
+                gatt.close()
+                lifecycleState = BLELifecycleState.Disconnected
+                bleRestartLifecycle()
+            }
+        }
+
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             val deviceAddress = gatt.device.address
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    logManager.appendLog("Connected to $deviceAddress")
+                    logManager.appendLog("Connected to $deviceAddress, requesting MTU")
+                    requestMTU(gatt)
 
-                    // recommended on UI thread https://punchthrough.com/android-ble-guide/
-                    Handler(Looper.getMainLooper()).post {
-                        lifecycleState = BLELifecycleState.ConnectedDiscovering
-                        gatt.discoverServices()
-                    }
+
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     logManager.appendLog("Disconnected from $deviceAddress")
                     connectedGatt = null
@@ -260,14 +286,19 @@ class BleDeviceActivity : AppCompatActivity() {
                 //buffer = characteristic.value
                 //logManager.appendLog("onCharacteristicChanged value=\"$strValue\"")
                 val strValue = characteristic.value.toString(Charsets.UTF_8)
-                logManager.appendLog("onCharacteristicChanged value=\"$strValue\"")
+                //logManager.appendLog("onCharacteristicChanged value=\"$strValue\"")
 
-                track.write(characteristic.value, 0, minBufferSize)
+                val buffer: ByteBuffer = ByteBuffer.wrap(characteristic.value)
+
+                logManager.appendLog(characteristic.value.size.toString())
+                logManager.appendLog(track.write(characteristic.value, 0, characteristic.value.size, AudioTrack.WRITE_NON_BLOCKING).toString())
 
             } else {
                 logManager.appendLog("onCharacteristicChanged unknown uuid $characteristic.uuid")
             }
         }
+
+
 
     }
     //------------------------------------------------------------------------------------------------------------------
