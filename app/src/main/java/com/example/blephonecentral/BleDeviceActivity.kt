@@ -12,27 +12,26 @@ import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.example.room.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
-import java.nio.charset.StandardCharsets
 import java.util.*
 
 
 const val EXTRA_BLE_DEVICE = "BLEDevice"
 private const val SERVICE_UUID = "25AE1449-05D3-4C5B-8281-93D4E07420CF"
-private const val CHAR_FOR_INDICATE_UUID = "25AE1494-05D3-4C5B-8281-93D4E07420CF"
+private const val CHAR_FOR_NOTIFY_UUID = "25AE1494-05D3-4C5B-8281-93D4E07420CF"
 private const val CCC_DESCRIPTOR_UUID = "00002930-0000-1000-8000-00805f9b34fb"
 
-private const val SAMPLING_RATE_IN_HZ = 6000
+private const val SAMPLING_RATE_IN_HZ = 12600
 
 private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
 
-private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_8BIT
 
 private const val BUFFER_SIZE_FACTOR = 1
 
 private const val GATT_MAX_MTU_SIZE = 517
+
+private const val GATT_CONNECTION_PRIORITY = BluetoothGatt.CONNECTION_PRIORITY_HIGH
 
 class BleDeviceActivity : AppCompatActivity() {
     enum class BLELifecycleState {
@@ -54,7 +53,7 @@ class BleDeviceActivity : AppCompatActivity() {
 
     private var device: BluetoothDevice? = null
     private var connectedGatt: BluetoothGatt? = null
-    private var characteristicForIndicate: BluetoothGattCharacteristic? = null
+    private var characteristicForNotify: BluetoothGattCharacteristic? = null
 
     private lateinit var logManager: LogManager
 
@@ -146,6 +145,7 @@ class BleDeviceActivity : AppCompatActivity() {
     }
 
 
+
     @SuppressLint("SetTextI18n")
     fun onTapClearLog(view: View) {
         logManager.clearLog()
@@ -169,14 +169,14 @@ class BleDeviceActivity : AppCompatActivity() {
         }, timeoutSec * 1000)
     }
 
-    private fun subscribeToIndications(characteristic: BluetoothGattCharacteristic, gatt: BluetoothGatt) {
+    private fun subscribeToNotifications(characteristic: BluetoothGattCharacteristic, gatt: BluetoothGatt) {
         val cccdUuid = UUID.fromString(CCC_DESCRIPTOR_UUID)
         characteristic.getDescriptor(cccdUuid)?.let { cccDescriptor ->
             if (!gatt.setCharacteristicNotification(characteristic, true)) {
                 logManager.appendLog("ERROR: setNotification(true) failed for ${characteristic.uuid}")
                 return
             }
-            cccDescriptor.value = BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+            cccDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             gatt.writeDescriptor(cccDescriptor)
         }
 
@@ -229,10 +229,11 @@ class BleDeviceActivity : AppCompatActivity() {
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    logManager.appendLog("Connected to $deviceAddress, requesting MTU")
+                    logManager.appendLog("Connected to $deviceAddress, requesting priority and MTU")
+
+                    if(gatt.requestConnectionPriority(GATT_CONNECTION_PRIORITY)) logManager.appendLog("connection priority changed successfully")
+                    else logManager.appendLog("connection priority not changed")
                     requestMTU(gatt)
-
-
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     logManager.appendLog("Disconnected from $deviceAddress")
                     connectedGatt = null
@@ -270,19 +271,19 @@ class BleDeviceActivity : AppCompatActivity() {
             }
 
             connectedGatt = gatt
-            characteristicForIndicate = service.getCharacteristic(UUID.fromString(CHAR_FOR_INDICATE_UUID))
+            characteristicForNotify = service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID))
 
-            characteristicForIndicate?.let {
+            characteristicForNotify?.let {
                 lifecycleState = BLELifecycleState.ConnectedSubscribing
-                subscribeToIndications(it, gatt)
+                subscribeToNotifications(it, gatt)
             } ?: run {
-                logManager.appendLog("WARN: characteristic not found $CHAR_FOR_INDICATE_UUID")
+                logManager.appendLog("WARN: characteristic not found $CHAR_FOR_NOTIFY_UUID")
                 lifecycleState = BLELifecycleState.Connected
             }
         }
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
-            if (characteristic.uuid == UUID.fromString(CHAR_FOR_INDICATE_UUID)) {
+            if (characteristic.uuid == UUID.fromString(CHAR_FOR_NOTIFY_UUID)) {
                 //buffer = characteristic.value
                 //logManager.appendLog("onCharacteristicChanged value=\"$strValue\"")
                 val strValue = characteristic.value.toString(Charsets.UTF_8)
@@ -290,8 +291,8 @@ class BleDeviceActivity : AppCompatActivity() {
 
                 val buffer: ByteBuffer = ByteBuffer.wrap(characteristic.value)
 
-                logManager.appendLog(characteristic.value.size.toString())
-                logManager.appendLog(track.write(characteristic.value, 0, characteristic.value.size, AudioTrack.WRITE_NON_BLOCKING).toString())
+                //logManager.appendLog(characteristic.value.size.toString())
+                logManager.appendLog(logManager.getCurrentTime() + " " + track.write(characteristic.value, 0, characteristic.value.size, AudioTrack.WRITE_NON_BLOCKING).toString())
 
             } else {
                 logManager.appendLog("onCharacteristicChanged unknown uuid $characteristic.uuid")
