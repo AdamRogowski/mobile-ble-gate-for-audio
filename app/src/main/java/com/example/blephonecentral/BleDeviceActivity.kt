@@ -289,10 +289,11 @@ class BleDeviceActivity : AppCompatActivity() {
                 val strValue = characteristic.value.toString(Charsets.UTF_8)
                 //logManager.appendLog("onCharacteristicChanged value=\"$strValue\"")
 
-                val buffer: ByteBuffer = ByteBuffer.wrap(characteristic.value)
+                //val buffer: ByteBuffer = ByteBuffer.wrap(characteristic.value)
 
                 //logManager.appendLog(characteristic.value.size.toString())
                 logManager.appendLog(logManager.getCurrentTime() + " " + track.write(characteristic.value, 0, characteristic.value.size, AudioTrack.WRITE_NON_BLOCKING).toString())
+                //logManager.appendLog(logManager.getCurrentTime() + " received " + characteristic.value.size)
 
             } else {
                 logManager.appendLog("onCharacteristicChanged unknown uuid $characteristic.uuid")
