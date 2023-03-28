@@ -10,10 +10,12 @@ import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.example.room.*
-import java.nio.ByteBuffer
 import java.util.*
+import java.util.concurrent.ArrayBlockingQueue
+import androidx.activity.addCallback
 
 
 const val EXTRA_BLE_DEVICE = "BLEDevice"
@@ -32,6 +34,8 @@ private const val BUFFER_SIZE_FACTOR = 1
 private const val GATT_MAX_MTU_SIZE = 517
 
 private const val GATT_CONNECTION_PRIORITY = BluetoothGatt.CONNECTION_PRIORITY_HIGH
+
+private const val QUEUE_CAPACITY = 1000
 
 class BleDeviceActivity : AppCompatActivity() {
     enum class BLELifecycleState {
@@ -76,9 +80,13 @@ class BleDeviceActivity : AppCompatActivity() {
         AudioFormat.CHANNEL_CONFIGURATION_MONO, AUDIO_FORMAT,
         minBufferSize, AudioTrack.MODE_STREAM)
 
-    private var playThread: Thread? = null
+    private var playingThread: Thread? = null
 
+    private var receivingThread: Thread? = null
 
+    private val queue: ArrayBlockingQueue<ByteArray> = ArrayBlockingQueue(QUEUE_CAPACITY)
+
+    private var writeTrackOn: Boolean = true
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,6 +104,19 @@ class BleDeviceActivity : AppCompatActivity() {
         textViewDeviceName.text = deviceName
         startPlaying()
         //logManager.appendLog(minBufferSize.toString() + "\n")
+
+        /*
+        onBackPressedDispatcher.addCallback(this, object: OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                connectedGatt?.close()
+                connectedGatt = null
+                stopPlaying()
+
+            }
+        })
+
+         */
+
     }
 
     override fun onDestroy() {
@@ -107,13 +128,16 @@ class BleDeviceActivity : AppCompatActivity() {
 
 
     // Playback received audio
-    fun startPlaying() {
+    private fun startPlaying() {
         Log.d("AUDIO", "Assigning player")
+        writeTrackOn = true
         track.play()
         //logManager.appendLog(track.state.toString())
         // Receive and play audio
-        playThread = Thread({ connect() }, "AudioTrack Thread")
-        playThread!!.start()
+        receivingThread = Thread({ connect() }, "ReceiveAudio Thread")
+        playingThread = Thread({ writeTrack() }, "WriteTrack Thread")
+        receivingThread!!.start()
+        playingThread!!.start()
     }
 
     /*
@@ -138,6 +162,11 @@ class BleDeviceActivity : AppCompatActivity() {
 
     // Stop playing and free up resources
     fun stopPlaying() {
+        track.stop()
+        receivingThread = null
+        playingThread = null
+        logManager.appendLog("receiving stopped")
+        writeTrackOn = false
     }
 
     private fun requestMTU(gatt: BluetoothGatt){
@@ -289,19 +318,31 @@ class BleDeviceActivity : AppCompatActivity() {
                 val strValue = characteristic.value.toString(Charsets.UTF_8)
                 //logManager.appendLog("onCharacteristicChanged value=\"$strValue\"")
 
+                //logManager.appendLog(logManager.getCurrentTime() + " " + track.write(characteristic.value, 0, characteristic.value.size, AudioTrack.WRITE_NON_BLOCKING).toString())
+
                 //val buffer: ByteBuffer = ByteBuffer.wrap(characteristic.value)
 
                 //logManager.appendLog(characteristic.value.size.toString())
-                logManager.appendLog(logManager.getCurrentTime() + " " + track.write(characteristic.value, 0, characteristic.value.size, AudioTrack.WRITE_NON_BLOCKING).toString())
-                //logManager.appendLog(logManager.getCurrentTime() + " received " + characteristic.value.size)
+
+                //logManager.appendLog(logManager.getCurrentTime() + " received " + + characteristic.value.size + " " + characteristic.value.toString(Charsets.UTF_8))
+
+
+                queue.add(characteristic.value)
+                logManager.appendLog("received " + characteristic.value.size.toString() + " bytes")
 
             } else {
                 logManager.appendLog("onCharacteristicChanged unknown uuid $characteristic.uuid")
             }
         }
-
-
-
     }
+
+    private fun writeTrack(){
+        while(writeTrackOn){
+            val arr = queue.take()
+            //AudioTrack.WRITE_NON_BLOCKING looses some data
+            logManager.appendLog(logManager.getCurrentTime() + " " + track.write(arr, 0, arr.size, AudioTrack.WRITE_BLOCKING).toString())
+        }
+    }
+
     //------------------------------------------------------------------------------------------------------------------
 }
