@@ -61,4 +61,8 @@ dependencies {
     annotationProcessor "android.arch.persistence.room:compiler:1.1.1"
     //noinspection GradleDependency
     implementation 'androidx.room:room-runtime:2.4.3'
+
+    implementation('io.socket:socket.io-client:2.0.0') {
+        exclude group: 'org.json', module: 'json'
+    }
 }

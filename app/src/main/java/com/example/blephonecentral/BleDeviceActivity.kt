@@ -23,7 +23,8 @@ private const val SERVICE_UUID = "25AE1449-05D3-4C5B-8281-93D4E07420CF"
 private const val CHAR_FOR_NOTIFY_UUID = "25AE1494-05D3-4C5B-8281-93D4E07420CF"
 private const val CCC_DESCRIPTOR_UUID = "00002930-0000-1000-8000-00805f9b34fb"
 
-private const val SAMPLING_RATE_IN_HZ = 12600
+//ffmpeg supported freq: 16000, 12000, 11025, 8000, 7350
+private const val SAMPLING_RATE_IN_HZ = 12000
 
 private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
 
@@ -36,6 +37,7 @@ private const val GATT_MAX_MTU_SIZE = 517
 private const val GATT_CONNECTION_PRIORITY = BluetoothGatt.CONNECTION_PRIORITY_HIGH
 
 private const val QUEUE_CAPACITY = 1000
+
 
 class BleDeviceActivity : AppCompatActivity() {
     enum class BLELifecycleState {
@@ -88,6 +90,8 @@ class BleDeviceActivity : AppCompatActivity() {
 
     private var writeTrackOn: Boolean = true
 
+    private var testIterator = 0
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -102,20 +106,37 @@ class BleDeviceActivity : AppCompatActivity() {
             "<null>"
         }
         textViewDeviceName.text = deviceName
-        startPlaying()
-        //logManager.appendLog(minBufferSize.toString() + "\n")
 
-        /*
-        onBackPressedDispatcher.addCallback(this, object: OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                connectedGatt?.close()
-                connectedGatt = null
-                stopPlaying()
+        // The following lines connects the Android app to the server.
+        SocketHandler.setSocket()
+        SocketHandler.establishConnection()
 
+        val mSocket = SocketHandler.getSocket()
+
+        mSocket.on("response") { args ->
+            val responseCode = args[0] as Int
+            logManager.appendLog("Response code: $responseCode")
+        }
+
+        //startPlaying()
+
+
+        receivingThread = Thread({ connect() }, "ReceiveAudio Thread")
+        receivingThread!!.start()
+
+        testIterator = 0
+
+        Thread {
+            while (true) {
+                val data = queue.take()
+                //println("took from queue")
+                mSocket.emit("audioData", data)
+                logManager.appendLog(logManager.getCurrentTime() + " $testIterator: data sent")
+                testIterator++
             }
-        })
+        }.start()
 
-         */
+
 
     }
 
@@ -123,13 +144,17 @@ class BleDeviceActivity : AppCompatActivity() {
         connectedGatt?.close()
         connectedGatt = null
         super.onDestroy()
+        SocketHandler.closeConnection()
+    }
+
+    fun onTapStopSocket(view: View){
+        SocketHandler.closeConnection()
     }
 
 
 
     // Playback received audio
     private fun startPlaying() {
-        Log.d("AUDIO", "Assigning player")
         writeTrackOn = true
         track.play()
         //logManager.appendLog(track.state.toString())
@@ -328,7 +353,7 @@ class BleDeviceActivity : AppCompatActivity() {
 
 
                 queue.add(characteristic.value)
-                logManager.appendLog("received " + characteristic.value.size.toString() + " bytes")
+                //logManager.appendLog("received " + characteristic.value.size.toString() + " bytes")
 
             } else {
                 logManager.appendLog("onCharacteristicChanged unknown uuid $characteristic.uuid")
