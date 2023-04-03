@@ -23,7 +23,7 @@ private const val SERVICE_UUID = "25AE1449-05D3-4C5B-8281-93D4E07420CF"
 private const val CHAR_FOR_NOTIFY_UUID = "25AE1494-05D3-4C5B-8281-93D4E07420CF"
 private const val CCC_DESCRIPTOR_UUID = "00002930-0000-1000-8000-00805f9b34fb"
 
-//ffmpeg supported freq: 16000, 12000, 11025, 8000, 7350
+//ffmpeg supported freq: 64000 48000 44100 32000 24000 22050 16000 12000 11025 8000 7350
 private const val SAMPLING_RATE_IN_HZ = 12000
 
 private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
@@ -78,6 +78,23 @@ class BleDeviceActivity : AppCompatActivity() {
     private val minBufferSize = AudioRecord.getMinBufferSize(SAMPLING_RATE_IN_HZ,
         CHANNEL_CONFIG, AUDIO_FORMAT) * BUFFER_SIZE_FACTOR
 
+    /*
+        ENCODING_PCM_16BIT -> 2
+        ENCODING_PCM_8BIT -> 3
+        ENCODING_PCM_FLOAT -> 4
+         */
+
+    private fun logAudioBufferSize(samplingRate: Int, audioFormat: Int, channelConfig: Int = AudioFormat.CHANNEL_IN_MONO){
+        val bufferSize = AudioRecord.getMinBufferSize(samplingRate, channelConfig, audioFormat)
+        val audioFormatName: String = when (audioFormat){
+            2 -> "PCM_16BIT"
+            3 -> "PCM_8BIT"
+            4 -> "PCM_FLOAT"
+            else -> "undefined"
+        }
+        logManager.appendLog("audioBuffer size: $bufferSize, samplingRate: $samplingRate, audio format: $audioFormatName")
+    }
+
     private var track = AudioTrack(AudioManager.STREAM_MUSIC, SAMPLING_RATE_IN_HZ,
         AudioFormat.CHANNEL_CONFIGURATION_MONO, AUDIO_FORMAT,
         minBufferSize, AudioTrack.MODE_STREAM)
@@ -118,7 +135,21 @@ class BleDeviceActivity : AppCompatActivity() {
             logManager.appendLog("Response code: $responseCode")
         }
 
+        /*
+        val samples: IntArray  = intArrayOf(64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350)
+        val format: IntArray = intArrayOf(2, 3, 4)
+
+        samples.forEach {  i ->
+            format.forEach { j ->
+                logAudioBufferSize(i, j)
+            }
+        }
+
+         */
+
+
         //startPlaying()
+
 
 
         receivingThread = Thread({ connect() }, "ReceiveAudio Thread")
@@ -135,6 +166,7 @@ class BleDeviceActivity : AppCompatActivity() {
                 testIterator++
             }
         }.start()
+
 
 
 
