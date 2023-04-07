@@ -19,7 +19,7 @@ import java.util.concurrent.ArrayBlockingQueue
 
 const val EXTRA_BLE_DEVICE = "BLUDevice"
 private const val QUEUE_CAPACITY = 1000
-private const val BUFFER_SIZE = 480
+private const val BUFFER_SIZE = 960
 private val MY_UUID = UUID.fromString("25AE1489-05D3-4C5B-8281-93D4E07420CF")
 private const val REQUEST_ENABLE_BLUETOOTH = 1
 
@@ -87,7 +87,6 @@ class BleDeviceActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         SocketHandler.closeConnection()
-
     }
 
     fun onTapStartClient(view: View){
@@ -115,8 +114,7 @@ class BleDeviceActivity : AppCompatActivity() {
                     streamReader.start()
                 }
             } catch (e: IOException) {
-                e.printStackTrace()
-                logManager.appendLog("state connection failed")
+                logManager.appendLog("state connection failed, $e")
             }
         }
     }
@@ -142,7 +140,7 @@ class BleDeviceActivity : AppCompatActivity() {
 
                     queue.add(buffer)
                 } catch (e: IOException) {
-                    e.printStackTrace()
+                    logManager.appendLog("input stream read failed, $e")
                 }
             }
         }
