@@ -60,58 +60,37 @@
         app:layout_constraintTop_toTopOf="@+id/scrollViewLog" />
 
     <Button
-        android:id="@+id/buttonStopSending"
+        android:id="@+id/buttonStartClient"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginEnd="4dp"
         android:includeFontPadding="false"
         android:minWidth="80dip"
         android:minHeight="50dip"
-        android:onClick="onTapStopSocket"
+        android:onClick="onTapStartClient"
         android:paddingLeft="8dp"
         android:paddingTop="4dp"
         android:paddingRight="8dp"
         android:paddingBottom="4dp"
-        android:text="STOP"
+        android:text="CLIENT"
         app:layout_constraintEnd_toEndOf="@+id/scrollViewLog"
         app:layout_constraintTop_toBottomOf="@+id/buttonClearLog" />
 
-
-    <!--
     <Button
-        android:id="@+id/buttonLogDatabase"
+        android:id="@+id/buttonSend"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginEnd="4dp"
         android:includeFontPadding="false"
-        android:minWidth="48dip"
-        android:minHeight="32dip"
-        android:onClick="onTapLogDatabase"
+        android:minWidth="80dip"
+        android:minHeight="50dip"
+        android:onClick="onTapSend"
         android:paddingLeft="8dp"
         android:paddingTop="4dp"
         android:paddingRight="8dp"
         android:paddingBottom="4dp"
-        android:text="@string/button_log_db"
+        android:text="SEND"
         app:layout_constraintEnd_toEndOf="@+id/scrollViewLog"
-        app:layout_constraintTop_toBottomOf="@+id/buttonClearLog" />
+        app:layout_constraintTop_toBottomOf="@+id/buttonStartClient" />
 
-
-    <Button
-        android:id="@+id/buttonTest"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="4dp"
-        android:includeFontPadding="false"
-        android:minWidth="48dip"
-        android:minHeight="32dip"
-        android:onClick="onTapClearDatabase"
-        android:paddingLeft="8dp"
-        android:paddingTop="4dp"
-        android:paddingRight="8dp"
-        android:paddingBottom="4dp"
-        android:text="@string/button_clear_db"
-        android:backgroundTint="@color/DarkRed"
-        app:layout_constraintEnd_toEndOf="@+id/scrollViewLog"
-        app:layout_constraintTop_toBottomOf="@+id/buttonLogDatabase" />
-    -->
 </androidx.constraintlayout.widget.ConstraintLayout>
