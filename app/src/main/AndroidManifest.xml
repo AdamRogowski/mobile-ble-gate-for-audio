@@ -20,7 +20,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.BlePhoneCentral"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"> <!-- very important for the socketIO functionality -->
         <activity
             android:name=".BleDeviceActivity"
             android:parentActivityName=".MainActivity" />
