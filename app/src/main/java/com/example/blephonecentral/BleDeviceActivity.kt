@@ -19,7 +19,7 @@ import java.util.concurrent.ArrayBlockingQueue
 
 const val EXTRA_BLE_DEVICE = "BLUDevice"
 private const val QUEUE_CAPACITY = 1000
-private const val BUFFER_SIZE = 960
+private const val BUFFER_SIZE = 160
 private val MY_UUID = UUID.fromString("25AE1489-05D3-4C5B-8281-93D4E07420CF")
 private const val REQUEST_ENABLE_BLUETOOTH = 1
 
