@@ -1,6 +1,7 @@
 package com.example.blephonecentral
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
@@ -53,6 +54,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun reloadDevices() {
         val allDevices = bluetoothAdapter.bondedDevices.toList()
         val bleDevices = allDevices.filter {

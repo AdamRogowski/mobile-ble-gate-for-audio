@@ -16,6 +16,7 @@ class DeviceListAdapter(
     interface OnClickListener {
         fun onClick(device: BluetoothDevice)
     }
+
     private val onClickListener: OnClickListener
 
     init {
@@ -46,7 +47,7 @@ class DeviceListAdapter(
             }
         }
 
-        @SuppressLint("SetTextI18n")
+        @SuppressLint("SetTextI18n", "MissingPermission")
         fun bindDevice(device: BluetoothDevice?) {
             this.device = device
             if (device == null) {

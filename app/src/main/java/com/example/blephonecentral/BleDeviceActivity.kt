@@ -7,30 +7,19 @@ import android.media.*
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.view.View
+import android.view.WindowManager
 import android.widget.TextView
-import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.example.room.*
 import java.util.*
 import java.util.concurrent.ArrayBlockingQueue
-import androidx.activity.addCallback
 
 
 const val EXTRA_BLE_DEVICE = "BLEDevice"
 private const val SERVICE_UUID = "25AE1449-05D3-4C5B-8281-93D4E07420CF"
 private const val CHAR_FOR_NOTIFY_UUID = "25AE1494-05D3-4C5B-8281-93D4E07420CF"
 private const val CCC_DESCRIPTOR_UUID = "00002930-0000-1000-8000-00805f9b34fb"
-
-//ffmpeg supported freq: 64000 48000 44100 32000 24000 22050 16000 12000 11025 8000 7350
-private const val SAMPLING_RATE_IN_HZ = 12000
-
-private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
-
-private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_8BIT
-
-private const val BUFFER_SIZE_FACTOR = 1
 
 private const val GATT_MAX_MTU_SIZE = 517
 
@@ -63,53 +52,37 @@ class BleDeviceActivity : AppCompatActivity() {
 
     private lateinit var logManager: LogManager
 
-    //-------------MIC RECEIVING------------------
-    /*
-
-
-    private var buffer = ByteBuffer.allocateDirect(BUFFER_SIZE)
-
-    private var track = AudioTrack(AudioManager.STREAM_MUSIC, SAMPLING_RATE_IN_HZ,
-        CHANNEL_CONFIG, AUDIO_FORMAT, BUFFER_SIZE, AudioTrack.MODE_STREAM)
-
-
-    */
-    //--------------------------------------------
-    private val minBufferSize = AudioRecord.getMinBufferSize(SAMPLING_RATE_IN_HZ,
-        CHANNEL_CONFIG, AUDIO_FORMAT) * BUFFER_SIZE_FACTOR
-
-    /*
-        ENCODING_PCM_16BIT -> 2
-        ENCODING_PCM_8BIT -> 3
-        ENCODING_PCM_FLOAT -> 4
-         */
-
-    private fun logAudioBufferSize(samplingRate: Int, audioFormat: Int, channelConfig: Int = AudioFormat.CHANNEL_IN_MONO){
-        val bufferSize = AudioRecord.getMinBufferSize(samplingRate, channelConfig, audioFormat)
-        val audioFormatName: String = when (audioFormat){
-            2 -> "PCM_16BIT"
-            3 -> "PCM_8BIT"
-            4 -> "PCM_FLOAT"
-            else -> "undefined"
-        }
-        logManager.appendLog("audioBuffer size: $bufferSize, samplingRate: $samplingRate, audio format: $audioFormatName")
-    }
-
-    private var track = AudioTrack(AudioManager.STREAM_MUSIC, SAMPLING_RATE_IN_HZ,
-        AudioFormat.CHANNEL_CONFIGURATION_MONO, AUDIO_FORMAT,
-        minBufferSize, AudioTrack.MODE_STREAM)
-
-    private var playingThread: Thread? = null
-
     private var receivingThread: Thread? = null
 
     private val queue: ArrayBlockingQueue<ByteArray> = ArrayBlockingQueue(QUEUE_CAPACITY)
 
-    private var writeTrackOn: Boolean = true
-
     private var testIterator = 0
 
+    private fun fakeSleepModeOn(){
+        // Change screen brightness to minimum
+        val brightness = 0
+        val layoutParam = window.attributes
+        layoutParam.screenBrightness = brightness.toFloat()
+        window.attributes = layoutParam
 
+        // Keep the screen on
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private fun fakeSleepModeOff(){
+        // Change screen brightness back to normal
+        val brightness = -1 // -1 means use the system default brightness
+        val layoutParam = window.attributes
+        layoutParam.screenBrightness = brightness.toFloat()
+        window.attributes = layoutParam
+
+        // Allow the screen to turn off automatically
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+
+
+    @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.ble_device_activity)
@@ -124,6 +97,8 @@ class BleDeviceActivity : AppCompatActivity() {
         }
         textViewDeviceName.text = deviceName
 
+        fakeSleepModeOn()
+
         // The following lines connects the Android app to the server.
         SocketHandler.setSocket()
         SocketHandler.establishConnection()
@@ -135,23 +110,6 @@ class BleDeviceActivity : AppCompatActivity() {
             logManager.appendLog("Response code: $responseCode")
         }
 
-        /*
-        val samples: IntArray  = intArrayOf(64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350)
-        val format: IntArray = intArrayOf(2, 3, 4)
-
-        samples.forEach {  i ->
-            format.forEach { j ->
-                logAudioBufferSize(i, j)
-            }
-        }
-
-         */
-
-
-        //startPlaying()
-
-
-
         receivingThread = Thread({ connect() }, "ReceiveAudio Thread")
         receivingThread!!.start()
 
@@ -162,81 +120,50 @@ class BleDeviceActivity : AppCompatActivity() {
                 val data = queue.take()
                 //println("took from queue")
                 mSocket.emit("audioData", data)
-                logManager.appendLog(logManager.getCurrentTime() + " $testIterator: data sent")
+                if(testIterator % 100 == 1) logManager.appendLog(logManager.getCurrentTime() + " $testIterator: data sent")
                 testIterator++
             }
         }.start()
-
-
-
-
     }
 
+    @SuppressLint("MissingPermission")
     override fun onDestroy() {
-        connectedGatt?.close()
-        connectedGatt = null
         super.onDestroy()
-        SocketHandler.closeConnection()
-    }
-
-    fun onTapStopSocket(view: View){
-        SocketHandler.closeConnection()
-    }
-
-
-
-    // Playback received audio
-    private fun startPlaying() {
-        writeTrackOn = true
-        track.play()
-        //logManager.appendLog(track.state.toString())
-        // Receive and play audio
-        receivingThread = Thread({ connect() }, "ReceiveAudio Thread")
-        playingThread = Thread({ writeTrack() }, "WriteTrack Thread")
-        receivingThread!!.start()
-        playingThread!!.start()
-    }
-
-    /*
-    // Receive audio and write into audio track object for playback
-    fun receiveRecording() {
-        val i = 0
-        while (!isRecording) {
-            try {
-                if (inStream.available() === 0) {
-                    //Do nothing
-                } else {
-                    inStream.read(buffer)
-                    track.write(buffer, 0, BUFFER_SIZE)
-                }
-            } catch (e: IOException) {
-                Log.d("AUDIO", "Error when receiving recording")
+        connectedGatt?.services?.forEach { service ->
+            service.characteristics.forEach { characteristic ->
+                unsubscribeFromCharacteristic(characteristic)
             }
         }
+        connectedGatt?.close()
+        connectedGatt = null
+        SocketHandler.closeConnection()
+        fakeSleepModeOff()
     }
 
-     */
-
-    // Stop playing and free up resources
-    fun stopPlaying() {
-        track.stop()
-        receivingThread = null
-        playingThread = null
-        logManager.appendLog("receiving stopped")
-        writeTrackOn = false
+    @SuppressLint("MissingPermission")
+    fun onTapStopSocket(view: View){
+        connectedGatt?.services?.forEach { service ->
+            service.characteristics.forEach { characteristic ->
+                unsubscribeFromCharacteristic(characteristic)
+            }
+        }
+        connectedGatt?.close()
+        connectedGatt = null
+        SocketHandler.closeConnection()
+        fakeSleepModeOff()
     }
 
+    @SuppressLint("MissingPermission")
     private fun requestMTU(gatt: BluetoothGatt){
         gatt.requestMtu(GATT_MAX_MTU_SIZE)
     }
-
-
 
     @SuppressLint("SetTextI18n")
     fun onTapClearLog(view: View) {
         logManager.clearLog()
     }
 
+    @SuppressLint("MissingPermission")
     private fun connect() {
         device?.let {
             logManager.appendLog("Connecting to ${it.name}")
@@ -255,6 +182,7 @@ class BleDeviceActivity : AppCompatActivity() {
         }, timeoutSec * 1000)
     }
 
+    @SuppressLint("MissingPermission")
     private fun subscribeToNotifications(characteristic: BluetoothGattCharacteristic, gatt: BluetoothGatt) {
         val cccdUuid = UUID.fromString(CCC_DESCRIPTOR_UUID)
         characteristic.getDescriptor(cccdUuid)?.let { cccDescriptor ->
@@ -268,6 +196,7 @@ class BleDeviceActivity : AppCompatActivity() {
 
     }
 
+    @SuppressLint("MissingPermission")
     private fun unsubscribeFromCharacteristic(characteristic: BluetoothGattCharacteristic) {
         val gatt = connectedGatt ?: return
 
@@ -287,6 +216,7 @@ class BleDeviceActivity : AppCompatActivity() {
         bluetoothManager.adapter
     }
 
+    @SuppressLint("MissingPermission")
     //BLE events, when connected----------------------------------------------------------------------------------------
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
@@ -342,9 +272,7 @@ class BleDeviceActivity : AppCompatActivity() {
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             logManager.appendLog("onServicesDiscovered services.count=${gatt.services.size} status=$status")
 
-            if (status == 129 /*GATT_INTERNAL_ERROR*/) {
-                // it should be a rare case, this article recommends to disconnect:
-                // https://medium.com/@martijn.van.welie/making-android-ble-work-part-2-47a3cdaade07
+            if (status == 129) {
                 logManager.appendLog("ERROR: status=129 (GATT_INTERNAL_ERROR), disconnecting")
                 gatt.disconnect()
                 return
@@ -360,8 +288,8 @@ class BleDeviceActivity : AppCompatActivity() {
             characteristicForNotify = service.getCharacteristic(UUID.fromString(CHAR_FOR_NOTIFY_UUID))
 
             characteristicForNotify?.let {
-                lifecycleState = BLELifecycleState.ConnectedSubscribing
                 subscribeToNotifications(it, gatt)
+                lifecycleState = BLELifecycleState.ConnectedSubscribing
             } ?: run {
                 logManager.appendLog("WARN: characteristic not found $CHAR_FOR_NOTIFY_UUID")
                 lifecycleState = BLELifecycleState.Connected
@@ -370,36 +298,12 @@ class BleDeviceActivity : AppCompatActivity() {
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             if (characteristic.uuid == UUID.fromString(CHAR_FOR_NOTIFY_UUID)) {
-                //buffer = characteristic.value
-                //logManager.appendLog("onCharacteristicChanged value=\"$strValue\"")
-                val strValue = characteristic.value.toString(Charsets.UTF_8)
-                //logManager.appendLog("onCharacteristicChanged value=\"$strValue\"")
-
-                //logManager.appendLog(logManager.getCurrentTime() + " " + track.write(characteristic.value, 0, characteristic.value.size, AudioTrack.WRITE_NON_BLOCKING).toString())
-
-                //val buffer: ByteBuffer = ByteBuffer.wrap(characteristic.value)
-
-                //logManager.appendLog(characteristic.value.size.toString())
-
-                //logManager.appendLog(logManager.getCurrentTime() + " received " + + characteristic.value.size + " " + characteristic.value.toString(Charsets.UTF_8))
-
 
                 queue.add(characteristic.value)
-                //logManager.appendLog("received " + characteristic.value.size.toString() + " bytes")
 
             } else {
                 logManager.appendLog("onCharacteristicChanged unknown uuid $characteristic.uuid")
             }
         }
     }
-
-    private fun writeTrack(){
-        while(writeTrackOn){
-            val arr = queue.take()
-            //AudioTrack.WRITE_NON_BLOCKING looses some data
-            logManager.appendLog(logManager.getCurrentTime() + " " + track.write(arr, 0, arr.size, AudioTrack.WRITE_BLOCKING).toString())
-        }
-    }
-
-    //------------------------------------------------------------------------------------------------------------------
 }
