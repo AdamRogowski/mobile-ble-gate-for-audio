@@ -14,6 +14,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.example.room.*
 import java.util.*
 import java.util.concurrent.ArrayBlockingQueue
+import io.socket.client.Socket
 
 
 const val EXTRA_BLE_DEVICE = "BLEDevice"
@@ -40,7 +41,7 @@ class BleDeviceActivity : AppCompatActivity() {
     private var lifecycleState = BLELifecycleState.Disconnected
         set(value) {
             field = value
-            logManager.appendLog("status = $value")
+            LogManager.appendLog("status = $value")
         }
 
     private val textViewDeviceName: TextView
@@ -50,9 +51,10 @@ class BleDeviceActivity : AppCompatActivity() {
     private var connectedGatt: BluetoothGatt? = null
     private var characteristicForNotify: BluetoothGattCharacteristic? = null
 
-    private lateinit var logManager: LogManager
-
     private var receivingThread: Thread? = null
+    private var sendingThread: Thread? = null
+
+    private lateinit var mSocket: Socket
 
     private val queue: ArrayBlockingQueue<ByteArray> = ArrayBlockingQueue(QUEUE_CAPACITY)
 
@@ -87,8 +89,6 @@ class BleDeviceActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.ble_device_activity)
 
-        logManager = LogManager(this)
-
         device = intent.getParcelableExtra(EXTRA_BLE_DEVICE)
         val deviceName: String = device?.let {
             "${it.name ?: "<no name"} (${it.address})"
@@ -99,15 +99,17 @@ class BleDeviceActivity : AppCompatActivity() {
 
         fakeSleepModeOn()
 
+        LogManager.setActivity(this)
+
         // The following lines connects the Android app to the server.
         SocketHandler.setSocket()
         SocketHandler.establishConnection()
 
-        val mSocket = SocketHandler.getSocket()
+        mSocket = SocketHandler.getSocket()
 
         mSocket.on("response") { args ->
             val responseCode = args[0] as Int
-            logManager.appendLog("Response code: $responseCode")
+            LogManager.appendLog("Response code: $responseCode")
         }
 
         receivingThread = Thread({ connect() }, "ReceiveAudio Thread")
@@ -115,15 +117,32 @@ class BleDeviceActivity : AppCompatActivity() {
 
         testIterator = 0
 
+        sendingThread = Thread({ sendFromQueue()}, "SendFromQueue Thread")
+        sendingThread!!.start()
+
+        /*
+
         Thread {
             while (true) {
                 val data = queue.take()
                 //println("took from queue")
                 mSocket.emit("audioData", data)
-                if(testIterator % 100 == 1) logManager.appendLog(logManager.getCurrentTime() + " $testIterator: data sent")
+                if(testIterator % 100 == 1) LogManager.appendLog(LogManager.getCurrentTime() + " $testIterator: data sent")
                 testIterator++
             }
         }.start()
+
+         */
+    }
+
+    private fun sendFromQueue(){
+        while (true) {
+            val data = queue.take()
+            //println("took from queue")
+            mSocket.emit("audioData", data)
+            if(testIterator % 100 == 1) LogManager.appendLog(LogManager.getCurrentTime() + " $testIterator: data sent")
+            testIterator++
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -160,23 +179,23 @@ class BleDeviceActivity : AppCompatActivity() {
 
     @SuppressLint("SetTextI18n")
     fun onTapClearLog(view: View) {
-        logManager.clearLog()
+        LogManager.clearLog()
     }
 
     @SuppressLint("MissingPermission")
     private fun connect() {
         device?.let {
-            logManager.appendLog("Connecting to ${it.name}")
+            LogManager.appendLog("Connecting to ${it.name}")
             lifecycleState = BLELifecycleState.Connecting
             it.connectGatt(this, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
         } ?: run {
-            logManager.appendLog("ERROR: BluetoothDevice is null, cannot connect")
+            LogManager.appendLog("ERROR: BluetoothDevice is null, cannot connect")
         }
     }
 
     private fun bleRestartLifecycle() {
         val timeoutSec = 2L
-        logManager.appendLog("Will try reconnect in $timeoutSec seconds")
+        LogManager.appendLog("Will try reconnect in $timeoutSec seconds")
         Handler(Looper.getMainLooper()).postDelayed({
             connect()
         }, timeoutSec * 1000)
@@ -187,7 +206,7 @@ class BleDeviceActivity : AppCompatActivity() {
         val cccdUuid = UUID.fromString(CCC_DESCRIPTOR_UUID)
         characteristic.getDescriptor(cccdUuid)?.let { cccDescriptor ->
             if (!gatt.setCharacteristicNotification(characteristic, true)) {
-                logManager.appendLog("ERROR: setNotification(true) failed for ${characteristic.uuid}")
+                LogManager.appendLog("ERROR: setNotification(true) failed for ${characteristic.uuid}")
                 return
             }
             cccDescriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
@@ -203,7 +222,7 @@ class BleDeviceActivity : AppCompatActivity() {
         val cccdUuid = UUID.fromString(CCC_DESCRIPTOR_UUID)
         characteristic.getDescriptor(cccdUuid)?.let { cccDescriptor ->
             if (!gatt.setCharacteristicNotification(characteristic, false)) {
-                logManager.appendLog("ERROR: setNotification(false) failed for ${characteristic.uuid}")
+                LogManager.appendLog("ERROR: setNotification(false) failed for ${characteristic.uuid}")
                 return
             }
             cccDescriptor.value = BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
@@ -222,7 +241,7 @@ class BleDeviceActivity : AppCompatActivity() {
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 // The MTU negotiation was successful
-                logManager.appendLog("MTU size changed to $mtu bytes")
+                LogManager.appendLog("MTU size changed to $mtu bytes")
 
                 // recommended on UI thread https://punchthrough.com/android-ble-guide/
                 Handler(Looper.getMainLooper()).post {
@@ -232,7 +251,7 @@ class BleDeviceActivity : AppCompatActivity() {
                 }
             } else {
                 // The MTU negotiation failed
-                logManager.appendLog("MTU size negotiation failed with status $status")
+                LogManager.appendLog("MTU size negotiation failed with status $status")
                 connectedGatt = null
                 gatt.close()
                 lifecycleState = BLELifecycleState.Disconnected
@@ -245,13 +264,13 @@ class BleDeviceActivity : AppCompatActivity() {
 
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    logManager.appendLog("Connected to $deviceAddress, requesting priority and MTU")
+                    LogManager.appendLog("Connected to $deviceAddress, requesting priority and MTU")
 
-                    if(gatt.requestConnectionPriority(GATT_CONNECTION_PRIORITY)) logManager.appendLog("connection priority changed successfully")
-                    else logManager.appendLog("connection priority not changed")
+                    if(gatt.requestConnectionPriority(GATT_CONNECTION_PRIORITY)) LogManager.appendLog("connection priority changed successfully")
+                    else LogManager.appendLog("connection priority not changed")
                     requestMTU(gatt)
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                    logManager.appendLog("Disconnected from $deviceAddress")
+                    LogManager.appendLog("Disconnected from $deviceAddress")
                     connectedGatt = null
                     gatt.close()
                     lifecycleState = BLELifecycleState.Disconnected
@@ -260,7 +279,7 @@ class BleDeviceActivity : AppCompatActivity() {
             } else {
                 // random error 133 - close() and try reconnect
 
-                logManager.appendLog("ERROR: onConnectionStateChange status=$status deviceAddress=$deviceAddress, disconnecting")
+                LogManager.appendLog("ERROR: onConnectionStateChange status=$status deviceAddress=$deviceAddress, disconnecting")
 
                 connectedGatt = null
                 gatt.close()
@@ -270,16 +289,16 @@ class BleDeviceActivity : AppCompatActivity() {
         }
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-            logManager.appendLog("onServicesDiscovered services.count=${gatt.services.size} status=$status")
+            LogManager.appendLog("onServicesDiscovered services.count=${gatt.services.size} status=$status")
 
             if (status == 129) {
-                logManager.appendLog("ERROR: status=129 (GATT_INTERNAL_ERROR), disconnecting")
+                LogManager.appendLog("ERROR: status=129 (GATT_INTERNAL_ERROR), disconnecting")
                 gatt.disconnect()
                 return
             }
 
             val service = gatt.getService(UUID.fromString(SERVICE_UUID)) ?: run {
-                logManager.appendLog("ERROR: Service not found $SERVICE_UUID, disconnecting")
+                LogManager.appendLog("ERROR: Service not found $SERVICE_UUID, disconnecting")
                 gatt.disconnect()
                 return
             }
@@ -291,7 +310,7 @@ class BleDeviceActivity : AppCompatActivity() {
                 subscribeToNotifications(it, gatt)
                 lifecycleState = BLELifecycleState.ConnectedSubscribing
             } ?: run {
-                logManager.appendLog("WARN: characteristic not found $CHAR_FOR_NOTIFY_UUID")
+                LogManager.appendLog("WARN: characteristic not found $CHAR_FOR_NOTIFY_UUID")
                 lifecycleState = BLELifecycleState.Connected
             }
         }
@@ -302,7 +321,7 @@ class BleDeviceActivity : AppCompatActivity() {
                 queue.add(characteristic.value)
 
             } else {
-                logManager.appendLog("onCharacteristicChanged unknown uuid $characteristic.uuid")
+                LogManager.appendLog("onCharacteristicChanged unknown uuid $characteristic.uuid")
             }
         }
     }

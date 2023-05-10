@@ -13,6 +13,7 @@ import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
+import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -40,17 +41,38 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
 
-        recyclerViewDeviceList.layoutManager = LinearLayoutManager(this)
-        recyclerViewDeviceList.adapter = deviceListAdapter
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (hasPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT))) {
-                reloadDevices()
-            }
+        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
+            // Bluetooth is not enabled, show a dialog window
+            AlertDialog.Builder(this)
+                .setMessage("\n\nTo use this app, please enable Bluetooth on your device.")
+                .setPositiveButton("Close app") { _, _ ->
+                    // Close the app when the button is clicked
+                    finish()
+                }
+                .setCancelable(false)
+                .show()
         } else {
-            grantPermissionsAndReloadDevices()
+
+            setContentView(R.layout.activity_main)
+
+            recyclerViewDeviceList.layoutManager = LinearLayoutManager(this)
+            recyclerViewDeviceList.adapter = deviceListAdapter
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (hasPermissions(
+                        arrayOf(
+                            Manifest.permission.BLUETOOTH_CONNECT,
+                            Manifest.permission.INTERNET
+                        )
+                    )
+                ) {
+                    reloadDevices()
+                }
+            } else {
+                grantPermissionsAndReloadDevices()
+            }
         }
     }
 
@@ -93,7 +115,8 @@ class MainActivity : AppCompatActivity() {
     private fun grantBluetoothBasicPermissions(askType: AskType, completion: (Boolean) -> Unit) {
         val wantedPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(
-                Manifest.permission.BLUETOOTH_CONNECT
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.INTERNET
             )
         } else {
             emptyArray()
