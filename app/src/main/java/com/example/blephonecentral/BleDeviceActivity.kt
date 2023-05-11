@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.media.*
 import android.os.Bundle
 import android.view.View
+import android.view.WindowManager
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -18,7 +19,7 @@ import java.util.*
 import java.util.concurrent.ArrayBlockingQueue
 
 const val EXTRA_BLE_DEVICE = "BLUDevice"
-private const val QUEUE_CAPACITY = 1000
+private const val QUEUE_CAPACITY = 30000 //aprox 20 min of recording
 private const val BUFFER_SIZE = 160
 private val MY_UUID = UUID.fromString("25AE1489-05D3-4C5B-8281-93D4E07420CF")
 private const val REQUEST_ENABLE_BLUETOOTH = 1
@@ -78,15 +79,41 @@ class BleDeviceActivity : AppCompatActivity() {
             while (true) {
                 val data = queue.take()
                 mSocket.emit("audioData", data)
-                logManager.appendLog(logManager.getCurrentTime() + " $testIterator: data sent")
+                if(testIterator % 100 == 1) logManager.appendLog(logManager.getCurrentTime() + " $testIterator: data sent")
                 testIterator++
             }
         }.start()
     }
 
+
+    private fun fakeSleepModeOn(){
+        // Change screen brightness to minimum
+        val brightness = 0
+        val layoutParam = window.attributes
+        layoutParam.screenBrightness = brightness.toFloat()
+        window.attributes = layoutParam
+
+        // Keep the screen on
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private fun fakeSleepModeOff(){
+        // Change screen brightness back to normal
+        val brightness = -1 // -1 means use the system default brightness
+        val layoutParam = window.attributes
+        layoutParam.screenBrightness = brightness.toFloat()
+        window.attributes = layoutParam
+
+        // Allow the screen to turn off automatically
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+
+
     override fun onDestroy() {
         super.onDestroy()
         SocketHandler.closeConnection()
+        fakeSleepModeOff()
     }
 
     fun onTapStartClient(view: View){
@@ -94,6 +121,7 @@ class BleDeviceActivity : AppCompatActivity() {
         logManager.appendLog("client started")
         clientClass.start()
         logManager.appendLog("state connecting")
+        fakeSleepModeOn()
     }
 
     private inner class ClientClass(device1: BluetoothDevice) : Thread() {
